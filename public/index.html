@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>OS Algorithm Visualizer</title>
+  <link rel="stylesheet" href="/style.css"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet"/>
+</head>
+<body>
+
+<!-- ══════════════════════ HEADER ══════════════════════════════ -->
+<header class="app-header">
+  <h1>⚙️ <span>OS Algorithm</span> Visualizer &mdash; Real-time WebSocket Streaming</h1>
+  <div class="ws-status">
+    <div class="ws-dot" id="ws-dot"></div>
+    <span id="ws-label">Connecting…</span>
+  </div>
+</header>
+
+<div class="app-body">
+<div style="min-width:0;overflow:auto;">
+
+  <!-- ══ Tab bar ══════════════════════════════════════════════ -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="scheduler">🖥️ CPU Scheduler</button>
+    <button class="tab-btn"        data-tab="bankers"  >🔒 Banker's Algorithm</button>
+  </div>
+
+  <!-- ══════════════ TAB: CPU SCHEDULER ═══════════════════════ -->
+  <div class="tab-pane active" id="tab-scheduler">
+
+    <!-- Controls -->
+    <div class="ctrl-panel">
+      <div class="ctrl-group">
+        <label>Algorithm</label>
+        <select id="os-algo">
+          <option value="fcfs"    >FCFS (First-Come, First-Served)</option>
+          <option value="sjf"     >SJF (Non-Preemptive)</option>
+          <option value="srtf"    >SRTF (Preemptive SJF)</option>
+          <option value="rr"      >Round Robin</option>
+          <option value="priority">Priority + Aging</option>
+        </select>
+      </div>
+
+      <div class="ctrl-group" id="rr-q-grp" style="display:none;">
+        <label>Time Quantum (Q)</label>
+        <input type="number" id="rr-quantum" value="2" min="1" max="20" style="width:70px;"/>
+      </div>
+
+      <div class="ctrl-group" id="aging-grp" style="display:none;">
+        <label>Aging Interval (ticks)</label>
+        <input type="number" id="aging-interval" value="5" min="1" max="30" style="width:70px;"/>
+      </div>
+
+      <div class="ctrl-group">
+        <label>Tick Speed</label>
+        <div class="speed-row">
+          <input type="range" id="os-speed" min="50" max="2000" step="50" value="400"/>
+          <span class="speed-val" id="os-speed-val">400ms</span>
+        </div>
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-primary"   id="os-start" >▶ Start</button>
+        <button class="btn btn-warning"   id="os-pause"  disabled>⏸ Pause</button>
+        <button class="btn btn-success"   id="os-resume" disabled>▶ Resume</button>
+        <button class="btn btn-info"      id="os-step"   disabled>⏭ Step</button>
+        <button class="btn btn-danger"    id="os-reset"  disabled>↺ Reset</button>
+      </div>
+    </div>
+
+    <!-- Process table editor -->
+    <div class="section-hd">Process Table <span id="proc-algo-tag" class="tag">FCFS</span></div>
+    <div style="overflow-x:auto;margin-bottom:14px;">
+      <table class="pcb-table" id="proc-input-table" style="min-width:500px;">
+        <thead>
+          <tr>
+            <th>PID</th><th>Name</th><th>Arrival</th><th>Burst</th>
+            <th id="priority-col-hd" style="display:none;">Priority</th>
+            <th style="width:50px;"></th>
+          </tr>
+        </thead>
+        <tbody id="proc-input-tbody">
+          <!-- filled by JS with editable rows -->
+        </tbody>
+      </table>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:20px;">
+      <button class="btn btn-secondary" id="add-proc-btn">+ Add Process</button>
+      <button class="btn btn-secondary" id="load-sample-btn">📋 Load Sample</button>
+    </div>
+
+    <!-- KPI strip -->
+    <div class="kpi-strip" id="os-kpi-strip">
+      <div class="kpi-chip">          <div class="kv" id="kpi-ticks">0</div>  <div class="kl">CPU Ticks</div></div>
+      <div class="kpi-chip kpi-teal"> <div class="kv" id="kpi-util" >0%</div> <div class="kl">CPU Utilization</div></div>
+      <div class="kpi-chip kpi-pink"> <div class="kv" id="kpi-tp"   >0</div>  <div class="kl">Throughput</div></div>
+      <div class="kpi-chip kpi-yellow"><div class="kv" id="kpi-awt" >—</div>  <div class="kl">Avg Waiting</div></div>
+      <div class="kpi-chip kpi-green"> <div class="kv" id="kpi-atat">—</div>  <div class="kl">Avg TAT</div></div>
+    </div>
+
+    <!-- OS main grid -->
+    <div class="os-grid">
+
+      <!-- CPU State -->
+      <div class="os-card">
+        <h3>⚙️ CPU State</h3>
+        <div class="cpu-box">
+          <div class="cpu-icon" id="cpu-icon">💤</div>
+          <div class="cpu-info">
+            <div class="cpu-name" id="cpu-name"><span class="cpu-idle-txt">Idle</span></div>
+            <div class="cpu-meta" id="cpu-meta">No process running</div>
+          </div>
+        </div>
+        <div class="tick-chip">
+          <div class="tick-n" id="tick-n">0</div>
+          <div class="tick-l">CPU Tick</div>
+        </div>
+        <div class="quantum-note" id="quantum-note" style="display:none;">
+          Quantum left: <strong id="quantum-left">—</strong> &nbsp;|&nbsp; Q = <span id="q-val">2</span>
+        </div>
+        <div class="quantum-note" id="aging-note" style="display:none;">
+          Aging interval: <strong id="aging-interval-note">5</strong> ticks
+        </div>
+      </div>
+
+      <!-- Ready Queue -->
+      <div class="os-card">
+        <h3>📋 Ready Queue</h3>
+        <div class="rq-list" id="rq-list">
+          <div class="rq-empty">Queue is empty</div>
+        </div>
+      </div>
+
+      <!-- PCB Table -->
+      <div class="os-card full-row">
+        <h3>📑 Process Control Blocks</h3>
+        <div class="pcb-table-wrap">
+          <table class="pcb-table" id="pcb-table">
+            <thead>
+              <tr>
+                <th>PID</th><th>Name</th><th>Arrival</th><th>Burst</th>
+                <th>Remaining</th><th>Priority</th><th id="eff-prio-col">Eff. Priority</th>
+                <th>State</th><th>WT</th><th>TAT</th>
+              </tr>
+            </thead>
+            <tbody id="pcb-tbody">
+              <tr><td colspan="10" class="placeholder-msg">Start a simulation to see PCB data</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Gantt Chart -->
+      <div class="os-card full-row">
+        <h3>📊 Gantt Chart (live)</h3>
+        <div class="gantt-wrap">
+          <div class="gantt-chart" id="gantt-chart">
+            <div class="placeholder-msg" style="padding:12px;">Gantt chart will appear here</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Completion Metrics (shown after done) -->
+      <div class="os-card full-row" id="metrics-card">
+        <h3>📈 Completion Metrics</h3>
+        <div class="metrics-wrap">
+          <table class="metrics-tbl" id="metrics-tbl">
+            <thead>
+              <tr>
+                <th>Process</th><th>Arrival</th><th>Burst</th>
+                <th>Priority</th><th>Finish</th>
+                <th>Turnaround</th><th>Waiting</th><th>Response</th>
+              </tr>
+            </thead>
+            <tbody id="metrics-tbody">
+              <tr><td colspan="8" class="placeholder-msg">Metrics appear upon completion</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div><!-- /os-grid -->
+  </div><!-- /tab-scheduler -->
+
+  <!-- ══════════════ TAB: BANKER'S ALGORITHM ═══════════════════ -->
+  <div class="tab-pane" id="tab-bankers">
+
+    <!-- Controls -->
+    <div class="ctrl-panel">
+      <div class="ctrl-group">
+        <label>Tick Speed</label>
+        <div class="speed-row">
+          <input type="range" id="bk-speed" min="100" max="3000" step="100" value="700"/>
+          <span class="speed-val" id="bk-speed-val">700ms</span>
+        </div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary"   id="bk-start" >▶ Run Safety Test</button>
+        <button class="btn btn-warning"   id="bk-pause"  disabled>⏸ Pause</button>
+        <button class="btn btn-success"   id="bk-resume" disabled>▶ Resume</button>
+        <button class="btn btn-info"      id="bk-step"   disabled>⏭ Step</button>
+        <button class="btn btn-danger"    id="bk-reset"  disabled>↺ Reset</button>
+      </div>
+    </div>
+
+    <!-- Sample dataset loader -->
+    <div class="sample-row">
+      <span style="font-size:0.78rem;color:var(--text-muted);align-self:center;">Load sample:</span>
+      <button class="btn btn-sample" id="bk-sample-safe"  >✅ Safe State (5P×3R)</button>
+      <button class="btn btn-sample" id="bk-sample-unsafe">❌ Unsafe State (5P×3R)</button>
+      <button class="btn btn-sample" id="bk-sample-small" >🔵 Small Safe (4P×3R)</button>
+    </div>
+
+    <!-- Verdict banner -->
+    <div class="verdict-banner" id="bk-verdict"></div>
+
+    <!-- Safe sequence -->
+    <div id="bk-seq-wrap" style="display:none;margin-bottom:14px;">
+      <div class="section-hd">Safe Execution Sequence</div>
+      <div class="seq-chips" id="bk-seq-chips"></div>
+    </div>
+
+    <!-- Bankers main layout -->
+    <div class="bankers-layout">
+
+      <!-- Matrices -->
+      <div class="bk-card full-row" style="grid-column:1/-1;">
+        <h3>📐 Resource Matrices</h3>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;">
+
+          <div>
+            <div class="section-hd" style="margin-bottom:6px;">Allocation</div>
+            <div class="mat-table-wrap"><table class="mat-table" id="mat-alloc"><tbody></tbody></table></div>
+          </div>
+
+          <div>
+            <div class="section-hd" style="margin-bottom:6px;">Maximum Demand</div>
+            <div class="mat-table-wrap"><table class="mat-table" id="mat-max"><tbody></tbody></table></div>
+          </div>
+
+          <div>
+            <div class="section-hd" style="margin-bottom:6px;">Need (Max − Alloc)</div>
+            <div class="mat-table-wrap"><table class="mat-table" id="mat-need"><tbody></tbody></table></div>
+          </div>
+
+          <div>
+            <div class="section-hd" style="margin-bottom:6px;">Available / Work</div>
+            <div class="mat-table-wrap"><table class="mat-table" id="mat-avail"><tbody></tbody></table></div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Finish vector -->
+      <div class="bk-card">
+        <h3>✅ Finish Vector</h3>
+        <div id="finish-chips" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;">
+          <span class="placeholder-msg" style="padding:0;">—</span>
+        </div>
+      </div>
+
+      <!-- Work vector (current) -->
+      <div class="bk-card">
+        <h3>🔧 Work Vector (current)</h3>
+        <div id="work-chips" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
+          <span class="placeholder-msg" style="padding:0;">—</span>
+        </div>
+      </div>
+
+      <!-- Step log -->
+      <div class="bk-card full-row" style="grid-column:1/-1;">
+        <h3>📜 Step-by-Step Safety Log</h3>
+        <div class="step-log" id="step-log">
+          <div class="step-entry step-init">Waiting for simulation to start…</div>
+        </div>
+      </div>
+
+    </div><!-- /bankers-layout -->
+  </div><!-- /tab-bankers -->
+
+</div><!-- /left col -->
+
+<!-- ══════════════════ TELEMETRY SIDEBAR ════════════════════════ -->
+<div class="telemetry-sidebar">
+
+  <div class="hud-section">
+    <h4>📡 Live Telemetry</h4>
+    <div class="hud-grid">
+      <div class="hud-metric">         <div class="hm-v" id="hud-frames">0</div><div class="hm-l">WS Frames</div></div>
+      <div class="hud-metric c2">      <div class="hm-v" id="hud-fps"   >0</div><div class="hm-l">Frames/s</div></div>
+      <div class="hud-metric cy">      <div class="hm-v" id="hud-ticks" >—</div><div class="hm-l">Ticks / Steps</div></div>
+      <div class="hud-metric cg">      <div class="hm-v" id="hud-wall"  >0</div><div class="hm-l">Wall ms</div></div>
+    </div>
+  </div>
+
+  <div class="hud-section">
+    <h4>📊 Scheduler Metrics</h4>
+    <div class="hud-grid">
+      <div class="hud-metric c2">      <div class="hm-v" id="hud-util"  >0%</div><div class="hm-l">CPU Util</div></div>
+      <div class="hud-metric c3">      <div class="hm-v" id="hud-tp"    >0</div> <div class="hm-l">Throughput</div></div>
+      <div class="hud-metric cy">      <div class="hm-v" id="hud-awt"   >—</div> <div class="hm-l">Avg WT</div></div>
+      <div class="hud-metric cg">      <div class="hm-v" id="hud-atat"  >—</div> <div class="hm-l">Avg TAT</div></div>
+    </div>
+  </div>
+
+  <div class="hud-section">
+    <h4>📶 Throughput Rate</h4>
+    <div style="font-size:0.7rem;color:var(--text-muted);">Frames/sec (max 20)</div>
+    <div class="tp-bg"><div class="tp-fill" id="tp-fill"></div></div>
+  </div>
+
+  <div class="hud-section">
+    <h4>🔌 WS Event Log</h4>
+    <div class="ws-log" id="ws-log"></div>
+  </div>
+
+</div><!-- /sidebar -->
+</div><!-- /app-body -->
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/client.js"></script>
+</body>
+</html>
